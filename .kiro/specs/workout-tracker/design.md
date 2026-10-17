@@ -224,6 +224,10 @@ sync_change_log  — per-user record of applied client change IDs (idempotency l
 - **Units:** each `workout_sets` row stores a canonical `weight NUMERIC(7,2)` plus explicit
   `weight_unit` ('kg'|'lb'); `users.preferred_unit` (default 'kg') holds the display
   preference. Conversions are computed, never destructive.
+- **Onboarding profile:** `users.onboarding_completed` defaults false for new accounts while
+  the migration preserves existing accounts as completed. Optional `training_goal`,
+  `experience_level`, and `training_days_per_week` fields personalize starter targets without
+  affecting historical workout calculations.
 - **Deletion:** templates and exercises soft-delete via `is_archived`; the session tree
   (`training_sessions` → `session_exercises` → `workout_sets`) cascades on delete; exercises
   referenced by templates/sessions use `ON DELETE RESTRICT` so history is never orphaned;
@@ -253,6 +257,14 @@ webhook (which only fires against the deployed URL).
 NULL` so the seed is idempotent. A minimal protected `/dashboard` page is the post-sign-in
 landing spot (Clerk redirects here) and links out to the exercise library, with placeholders
 for templates / training / history.
+
+**First-run onboarding:** incomplete accounts are redirected from `/dashboard` to a skippable,
+mobile-first `/onboarding` flow. `POST /api/onboarding` validates and stores the training
+profile. When requested, it atomically creates one owned starter template from reviewed shared
+exercise names and goal/experience-based set, repetition, and rest targets. It never prescribes
+weight or starts a workout automatically. Completion hands off to plan review, the dashboard,
+or an explicitly started first session. Existing users are not interrupted, and Settings links
+to an edit mode that updates preferences without creating another starter plan.
 
 **Known tech debt:** Clerk now recommends resource-based auth checks over
 `createRouteMatcher` in middleware/proxy. Our API routes are already individually protected via
@@ -295,8 +307,32 @@ user id is never trusted.
   nothing, so the handler returns **404 rather than 403** — this avoids leaking the existence
   of other users' private exercises. DELETE is a soft-delete (`is_archived = TRUE`) so
   templates/sessions that reference the exercise stay intact.
-- **UI:** mobile-first `/exercises` page (client component) that lists exercises and adds a
-  personal one, with muscle-group options loaded from `GET /api/muscle-groups`.
+- **UI:** mobile-first `/exercises` page (client component) that groups and filters exercises
+  by their data-driven primary body group and adds a personal one, with muscle-group options
+  loaded from `GET /api/muscle-groups`. Template and live-workout selectors use native
+  `optgroup` sections derived from the same exercise response. Uncategorized personal
+  movements appear under `Other`. The library also provides a front/back SVG body selector
+  using the MIT-licensed `react-muscle-highlighter` package. A tested mapping layer translates
+  the app taxonomy to anatomy slugs and keeps the selected group, view, highlight, and results
+  synchronized. Because the package's SVG paths are pointer-oriented, the labelled filter
+  buttons remain the authoritative keyboard/screen-reader control; the image is a progressive
+  visual enhancement rather than the only way to filter. Template and live-workout exercise
+  pickers reuse the same taxonomy mapping in a compact, non-interactive body preview. Changing
+  the native select immediately updates the highlighted primary region and its text label;
+  no additional API request or stored data is required. The library's Front and Back controls
+  also act as side-level filters: an internal filter token avoids colliding with the actual
+  `Back` muscle-group label, and the same taxonomy mapping determines which grouped sections
+  belong to each side. The library initializes with Front as the active filter rather than an
+  All-results state, the count reflects only visible movements, and the explicit Front list
+  excludes abductors, calves, glutes, quadriceps, and neck; those groups remain reachable via
+  Show all. The horizontal labelled-filter row is synchronized with the active body side, so
+  it does not present Back-only group buttons while Front is selected or vice versa.
+- **Demonstration media:** a provider-neutral exact mapping connects 29 reviewed shared
+  exercises to durable Free Exercise DB IDs. Selected public-domain start/finish images are
+  self-hosted for offline use, with the upstream source and bundled Unlicense recorded both in
+  the media descriptor and the UI. The descriptor keeps animation optional so a future licensed
+  provider can be added without changing consumers. No fuzzy name matching is used, so personal
+  or similarly named movements never receive an incorrect demonstration.
 - Cross-user denial is covered by tests and additionally validated at the SQL level against
   Postgres 16.
 
@@ -320,7 +356,8 @@ user id is never trusted.
 - **UI:** `/templates` (list, create, duplicate, archive) and `/templates/[id]` (rename on
   blur, add exercise from the library, up/down reorder, remove, and edit target sets, rep
   range, weight, and rest seconds). Exercise targets use collapsed summaries so full planning
-  detail remains available without making the mobile list visually dense. Mutations provide
+  detail remains available without making the mobile list visually dense. The add-exercise
+  picker previews the selected movement's primary body region, name, and equipment. Mutations provide
   explicit success/error feedback. Mobile-first;
   reorder uses up/down buttons rather than drag-drop for touch reliability.
 - Cross-user denial covered by tests and validated at the SQL level against Postgres 16.
@@ -355,7 +392,21 @@ user id is never trusted.
   previous performance, add/skip/remove exercise, progress indicator, finish/abandon
   confirmation, and save/error feedback). Mobile-first with large numeric inputs and a
   safe-area-aware sticky finish action; mutations reload for correctness (optimistic/offline
-  writes arrive in Milestone 6).
+  writes arrive in Milestone 6). The mid-workout exercise picker previews the selected
+  movement's primary body region, name, and equipment. When finishing, entered-but-unchecked sets are identified
+  from live input state, confirmed with the user, and persisted with `completed: true` before
+  the session status changes. A failed set save leaves the workout open, preventing silent
+  history loss. Each session exercise can use its snapshotted `rest_seconds` value or an
+  in-workout override. Successfully marking a set Done starts an optional recovery timer;
+  an absolute `endsAt` timestamp is stored under a session-scoped `localStorage` key so a
+  refresh or background interval throttling cannot reset the countdown. A compact panel above
+  the workout actions supports +30 seconds and Skip, then provides a visible completion state
+  plus best-effort Web Audio and vibration cues. Timer state is local UI state, not workout
+  history until the user chooses Start next set or Skip. That action stores planned rest,
+  actual elapsed rest, and an outcome (`completed`, `started_early`, or `skipped`) on the set
+  that initiated recovery. Workout history displays actual/planned rest per set and average
+  actual rest per exercise; the next workout's previous-performance strip includes that
+  exercise's average. Changing the session rest target does not mutate the source template.
 
 ### Training history (Milestone 5, implemented)
 
@@ -367,7 +418,10 @@ summed), unit-tested, and reused by history
 summaries now and analytics later (Milestone 8). UI: `/history` (unfinished sessions with
 resume links + completed/abandoned list) and `/history/[id]` (read-only session detail with
 per-exercise working-set count and volume). Historical records are presented as actual results,
-visually distinct from planned targets.
+visually distinct from planned targets. Each exercise in session detail reuses the shared
+taxonomy-to-anatomy mapping to show its primary trained body region with both a compact SVG
+highlight and a text label. The individual exercise-history header provides the same context;
+its analytics response includes the exercise's primary group and equipment alongside its name.
 
 ### Visual design system (brand pass)
 
@@ -391,11 +445,17 @@ centralized:
 - **Authenticated shell:** a compact brand/status header and safe-area-aware bottom navigation
   provide stable access to Home, Plans, Train, History, and Exercises. The live-session route
   hides the general navigation to reduce distraction and reserve the thumb zone for workout
-  completion controls.
+  completion controls. A persistent help affordance opens `/help`, which provides a searchable,
+  data-driven FAQ and getting-started workflow. Plans, Train, Exercises, History, and Progress
+  link directly to their FAQ section; Settings also exposes a larger help card. Native
+  `details`/`summary` disclosure keeps answers keyboard-accessible without another dependency.
 - **Application screens:** the dashboard prioritizes the training CTA; list screens share
   section headings, counts, empty/loading states, and consistent action groups; history uses a
   restrained timeline; the live recorder uses high-legibility set rows and completion states.
-  Motion is subtle and disabled through `prefers-reduced-motion`.
+  On fine-pointer devices, buttons, icon actions, navigation links, cards, and disclosures use
+  restrained token-based hover feedback (color, border, lift, or surface change). Hover styles
+  are gated behind `hover: hover` / `pointer: fine`; motion remains subtle and is disabled
+  through `prefers-reduced-motion`.
 
 ### Security hardening & data policy (Milestone 9, implemented)
 
@@ -413,7 +473,8 @@ server-side only, never echoed to clients. Production runs over HTTPS (Vercel) a
 host-provided env vars, never committed.
 
 **Account deletion & data retention (Req 13.5).** Users can delete their account from Settings
-(two-step confirmation) via `DELETE /api/account`:
+(an intentionally collapsed Advanced account actions disclosure plus two-step confirmation) via
+`DELETE /api/account`. Destructive red styling is revealed only after the disclosure opens:
 1. The local `users` row is deleted, which **cascades** to all owned records (templates,
    personal exercises, sessions, session-exercises, sets) through `ON DELETE CASCADE`.
 2. The Clerk identity is removed via `clerkClient().users.deleteUser()`. If that call fails the
@@ -423,6 +484,11 @@ Retention policy: workout data is private by default and retained only while the
 exists. Deletion is immediate and irreversible — no soft-delete/grace period in the MVP
 (a future enhancement could add a recovery window). Clerk is the system of record for identity
 and auth credentials; the app stores no passwords or tokens.
+
+**Session exit.** The persistent app header exposes Clerk's `SignOutButton` as a labelled exit
+icon beside Help and Settings. Clerk clears the authenticated session and redirects to the
+public landing page; no local workout data is deleted. Keeping logout out of Settings visually
+separates the reversible session action from permanent account deletion.
 
 ### Offline + sync design
 
@@ -443,6 +509,23 @@ and auth credentials; the app stores no passwords or tokens.
 - **Durability guarantee:** a failed sync leaves IndexedDB untouched; nothing is deleted until
   the server acknowledges.
 
+### Weekly workout scheduling
+
+`workout_schedules` stores recurring weekly intent separately from workout history. Each row is
+owned, references one template, uses a browser-local weekday (`0` Sunday through `6` Saturday),
+and may contain a wall-clock `TIME`. A unique `(owner_user_id, template_id, weekday)` constraint
+makes schedule writes idempotent and turns repeat selection into an update. Template deletion
+cascades schedules; historical training sessions remain independent snapshots.
+
+Endpoints:
+- `GET /api/schedules` — active slots joined to active owned plan names, ordered for weekly display.
+- `POST /api/schedules` — ownership-checked upsert of one plan/day/time slot.
+- `DELETE /api/schedules/[id]` — remove one owned slot, returning 404 for inaccessible IDs.
+
+The Plans UI highlights the current local day. Scheduling never starts a session automatically and
+does not request notification permission; reminders remain deferred pending a reliable opt-in push
+design.
+
 ### Analytics foundation (Milestone 8, implemented)
 
 Working volume = sum over completed, non-warm-up sets, with each weight normalized to kg
@@ -459,15 +542,114 @@ Endpoints (ownership-scoped to the caller):
   group across the window.
 - `GET /api/analytics/exercise/[exerciseId]` — per-session volume and top working set for one
   exercise (visibility-checked: shared or owned, else 404).
+- `GET /api/sessions/[id]/records` — records earned in one owned completed session compared with
+  earlier owned completed sessions. The read-time calculation normalizes pounds to kilograms,
+  excludes warm-up and incomplete sets, and requires strict improvement over an existing baseline.
+
+Personal records are derived rather than stored. `app/lib/personal-records.js` compares the current
+session with earlier data and reports heaviest completed set, repetitions at an equivalent weight,
+best single-set volume, and total-workout volume. The History detail UI uses supportive copy and
+does not prescribe maximum attempts. Abandoned/in-progress sessions are ineligible, and a first
+performance establishes the baseline without generating a celebration. Each celebration presents
+the previous best and current result side by side and links the previous source workout, with both
+workout name and date, so the improvement is auditable without leaving the current page.
 
 UI: `/progress` — ranked volume-by-muscle bars and an exercise-progression table, linked from
-the dashboard. Both queries validated against Postgres 16 (unit normalization, warm-up/incomplete
+the dashboard. `/exercises/[id]/history` provides an exercise-first chronology with workout
+name, date, working-set count, normalized volume, and the heaviest top set with repetitions;
+each entry links to the immutable source session. Sessions containing only planned exercises
+or incomplete sets are intentionally excluded so they cannot mask older valid performance.
+Both queries were validated against Postgres 16 (unit normalization, warm-up/incomplete
 exclusion, primary+secondary attribution, and cross-user isolation all confirmed).
 
 ### PWA / UX
 
-- `manifest.json` + icons for Home Screen install; service worker caches the app shell and
-  static assets for offline launch.
+- **Implemented install shell:** `app/manifest.js`, branded any-purpose and maskable PNGs,
+  Apple touch icon, theme/standalone metadata, Train/History shortcuts, and device-aware
+  Settings guidance support Home Screen installation. Product copy explicitly states that
+  installation does not yet make workout writes available offline.
+- **Deferred offline layer:** a future service worker will cache the app shell and static
+  assets needed for a complete offline recorder. The current production service worker caches
+  only public static assets and an offline fallback; it intentionally never caches authenticated
+  HTML or API responses.
+- **Implemented active-workout recovery slice:** `app/lib/workout-draft-store.js` keeps one
+  user-and-session-keyed IndexedDB snapshot plus sparse, unacknowledged weight/repetition fields. The
+  live recorder merges those fields over a fresh server response after reload. On a network-level
+  load failure it may display the cached session and accept numeric input, but disables completion,
+  finish, deletion, and structural controls. A 401/404/server response never falls back to private
+  cached data. Server acknowledgement removes the corresponding dirty fields; finalized sessions
+  remove the draft. This is recovery, not a sync queue or a claim of full offline operation.
+- **Implemented set synchronization slice:** retryable live-set PATCH failures enter the
+  `sync-changes` IndexedDB store with a stable `clientChangeId`. `POST /api/sync` accepts batches
+  of at most 50 `set.patch` operations. One PostgreSQL CTE ownership-checks the full
+  session→exercise→set path, inserts `(owner_user_id, client_change_id)` into `sync_change_log`,
+  and applies the update only when that insert succeeds. Therefore replay is a no-op and a foreign
+  or finalized resource never enters the ledger. Pending changes overlay cached/server session
+  state in creation order. Server acknowledgement removes both the queue record and acknowledged
+  dirty draft fields. Rejected changes are marked non-retryable, remain local, and surface as
+  `Needs attention`; they are not submitted repeatedly without a user decision.
+- **Structural sync extension:** set creation uses a browser-generated UUID and explicit order;
+  the ordinary POST route accepts the same identity online, while queued `set.create` uses the
+  idempotent ledger path offline. `session.patch` queues completed/abandoned finalization after all
+  preceding set writes. The recorder remains visible with a locally finalized state until server
+  acknowledgement, instead of navigating to history that the server cannot yet provide.
+- **Offline blank-workout extension:** `/train` generates the session UUID and timestamp before
+  the network request. A retryable failure persists an empty snapshot and queues `session.create`;
+  the live route recognizes its authenticated pending creation rather than treating the server's
+  temporary 404 as a missing workout. The last successful exercise-library response is stored in
+  a per-user IndexedDB catalogue so exercises can be selected after connectivity drops. Exercise
+  create/delete and set delete use stable identities and the same ordered ledger protocol.
+- **Cached-plan start:** a successful Train load expands each plan summary through its owned detail
+  endpoint and stores the complete ordered target snapshot per user. Offline start generates the
+  session and session-exercise UUIDs locally, persists the complete live snapshot, and queues
+  `session.create` followed by ordered `session_exercise.create` operations. The sync session write
+  validates that the referenced plan remains owned and visible but deliberately does not snapshot
+  it again; the queued exercise rows are the immutable start-time snapshot.
+- **Recorder cold launch:** production registration sends the current `/train` route and the
+  already-loaded executable asset URLs to `public/sw.js`. The worker caches exact recorder
+  navigation shells plus same-origin static assets and the Clerk loader script. Navigation remains
+  network-first; failure falls back to the exact cached recorder shell, then the public offline
+  page. `/api/*` is excluded at every fetch/cache entry point, so private workout content remains
+  solely in the current user's IndexedDB namespace. This deliberately does not make every app page
+  available offline.
+- **New-session recorder shell and device owner:** while online, `/train` also pre-caches the
+  parameter-neutral `/train/offline` recorder shell. A newly generated local session navigates to
+  that shell with its UUID in the URL query, so its route need not have existed before connectivity
+  was lost. The last successfully authenticated Clerk user id is remembered locally as a
+  device-bound IndexedDB namespace key and is used only while the browser reports offline; an
+  online sign-out clears it. This avoids treating a temporary offline Clerk state as a new user and
+  does not weaken server authorization when synchronization returns.
+  Clients upgraded while already offline recover that namespace only when existing drafts, queued
+  changes, and cached catalogues identify exactly one owner; a shared device with multiple owners
+  requires online authentication rather than guessing.
+  The live recorder uses the same local-draft fallback for thrown network failures and retryable
+  HTTP failures. This distinction matters on localhost: the Next.js server remains reachable after
+  Wi-Fi is disabled but returns 5xx when Neon is unreachable. A locally saved session therefore
+  loads normally in either case instead of showing a server error.
+  Because a cached HTML response was rendered without the eventual query string, the client reads
+  the local session UUID from `window.location.search` after hydration and does not issue API or
+  IndexedDB reads until that UUID is available.
+  Online session starts do not require the client-side offline owner marker: the authenticated API
+  remains authoritative and may succeed while Clerk's browser hook is still hydrating. The marker
+  gates only offline local creation, where it is required to select a private IndexedDB namespace.
+  Cold offline recovery likewise does not wait for Clerk's remote SDK to report `isLoaded`: once a
+  unique local owner and session UUID are available, the recorder reads that namespace directly.
+  Clerk/server authorization is still required before any queued write can synchronize.
+- **Conflict resolution:** the global sync status links to `/settings/sync`. The screen separates
+  pending work from rejected changes, preserves and displays attempted set values, and lets the
+  user retry one/all changes or explicitly keep the server version. Keeping the server version
+  requires confirmation, clears only the selected queue entry and its matching dirty set fields,
+  and never overwrites immutable completed history. Invalid client batches are also parked for
+  review instead of entering an automatic retry loop.
+- **Batching and workout dependencies:** the client drains the queue in ordered batches of at most
+  50 changes. Stable high-resolution creation order is used for new work; equal-time legacy changes
+  are dependency-ordered so session creation precedes exercises/sets and finalization runs last.
+  This prevents a larger offline workout from being rejected as one oversized request or becoming
+  immutable before its set values arrive.
+- **Offline rest settings:** exercise rest-duration selection is an optimistic
+  `session_exercise.patch`, persisted in the workout snapshot and synchronized through the same
+  ownership/status/idempotency ledger. Timer completion controls queue their set rest metrics while
+  offline instead of being disabled.
 - Mobile-first layout; set-entry controls kept within thumb reach; large numeric inputs;
   minimal navigation during a live session.
 - Visible sync/connectivity indicator; explicit saved/pending/error feedback.
@@ -480,8 +662,9 @@ exclusion, primary+secondary attribution, and cross-user isolation all confirmed
 - **Migrations:** per-table try/catch with progress logs; `process.exit(1)` on failure so a
   bad deploy fails loudly.
 - **Email:** failures logged, never thrown, so transactional flows don't crash on SMTP issues.
-- **Sync:** retryable failures backed off and retried; non-retryable (validation/authz)
-  surfaced to the user without destroying local data.
+- **Sync:** retryable transport/server failures remain queued; non-retryable conflicts and
+  validation failures stop retrying and are surfaced with retry/keep-server controls without
+  destroying local data before an explicit decision.
 
 ## Testing strategy
 

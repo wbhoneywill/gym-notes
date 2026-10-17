@@ -14,7 +14,13 @@ export async function GET() {
 
   try {
     return Response.json({
-      settings: { preferred_unit: user.preferred_unit ?? 'kg' },
+      settings: {
+        preferred_unit: user.preferred_unit ?? 'kg',
+        training_goal: user.training_goal ?? null,
+        experience_level: user.experience_level ?? null,
+        training_days_per_week: user.training_days_per_week ?? null,
+        onboarding_completed: user.onboarding_completed ?? false,
+      },
     });
   } catch (err) {
     console.error('GET /api/settings failed:', err);

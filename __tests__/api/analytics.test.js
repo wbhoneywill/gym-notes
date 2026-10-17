@@ -66,6 +66,16 @@ describe('GET /api/analytics/exercise/:exerciseId', () => {
     ({ GET } = await import('@/app/api/analytics/exercise/[exerciseId]/route.js'));
   });
 
+  it('401 when unauthenticated', async () => {
+    mockGetDbUser.mockResolvedValue(null);
+    const res = await GET(
+      makeRequest('http://localhost'),
+      params({ exerciseId: 'e1' })
+    );
+    expect(res.status).toBe(401);
+    expect(mockSql).not.toHaveBeenCalled();
+  });
+
   it('404 when the exercise is not visible to the user', async () => {
     mockGetDbUser.mockResolvedValue(USER);
     mockSql.mockResolvedValueOnce([]); // visibility check fails
@@ -79,9 +89,22 @@ describe('GET /api/analytics/exercise/:exerciseId', () => {
   it('returns progression points for a visible exercise', async () => {
     mockGetDbUser.mockResolvedValue(USER);
     mockSql
-      .mockResolvedValueOnce([{ id: 'e1', name: 'Bench' }]) // visible
+      .mockResolvedValueOnce([{
+        id: 'e1',
+        name: 'Bench',
+        primary_muscle_group: 'Chest',
+        equipment: 'Barbell',
+      }]) // visible
       .mockResolvedValueOnce([
-        { session_id: 's1', started_at: '2026-10-01', volume_kg: 2000, top_weight_kg: 100 },
+        {
+          session_id: 's1',
+          session_name: 'Push A',
+          started_at: '2026-10-01',
+          set_count: 3,
+          volume_kg: 2000,
+          top_weight_kg: 100,
+          top_reps: 8,
+        },
       ]);
     const res = await GET(
       makeRequest('http://localhost'),
@@ -90,7 +113,14 @@ describe('GET /api/analytics/exercise/:exerciseId', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.exercise.name).toBe('Bench');
+    expect(data.exercise.primary_muscle_group).toBe('Chest');
+    expect(data.exercise.equipment).toBe('Barbell');
     expect(data.points).toHaveLength(1);
+    expect(data.points[0]).toMatchObject({
+      session_name: 'Push A',
+      set_count: 3,
+      top_reps: 8,
+    });
     // Visibility query scoped by user id.
     expect(mockSql.mock.calls[0].slice(1)).toContain(USER.id);
   });

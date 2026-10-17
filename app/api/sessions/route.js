@@ -95,7 +95,7 @@ export async function POST(request) {
       templateName = tpl[0].name;
     }
 
-    const sessionId = randomUUID();
+    const sessionId = typeof body.id === 'string' && body.id ? body.id : randomUUID();
     const name = explicitName || templateName || null;
 
     const insertSession = sql`

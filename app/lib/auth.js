@@ -41,8 +41,8 @@ export async function getDbUser() {
     null;
 
   const inserted = await sql`
-    INSERT INTO users (clerk_user_id, email, name)
-    VALUES (${userId}, ${primaryEmail}, ${name})
+    INSERT INTO users (clerk_user_id, email, name, onboarding_completed)
+    VALUES (${userId}, ${primaryEmail}, ${name}, FALSE)
     ON CONFLICT (clerk_user_id)
     DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name
     RETURNING *

@@ -46,6 +46,11 @@ export async function POST(request, { params }) {
   const weightUnit = body.weight_unit === 'lb' ? 'lb' : 'kg';
   const setType = body.set_type === 'warmup' ? 'warmup' : 'working';
   const completed = body.completed === true;
+  const setId = typeof body.id === 'string' && body.id ? body.id : null;
+  const requestedOrder = body.set_order === undefined ? null : Number(body.set_order);
+  if (requestedOrder !== null && (!Number.isInteger(requestedOrder) || requestedOrder < 0)) {
+    return Response.json({ error: 'set_order must be a non-negative integer' }, { status: 400 });
+  }
 
   try {
     // Confirm the session-exercise belongs to the user's session.
@@ -64,7 +69,16 @@ export async function POST(request, { params }) {
       FROM workout_sets WHERE session_exercise_id = ${seId}
     `;
 
-    const rows = await sql`
+    const rows = setId ? await sql`
+      INSERT INTO workout_sets
+        (id, session_exercise_id, set_order, weight, weight_unit, reps,
+         completed, set_type)
+      VALUES
+        (${setId}, ${seId}, ${requestedOrder ?? next[0].next}, ${weight}, ${weightUnit}, ${reps},
+         ${completed}, ${setType})
+      RETURNING id, session_exercise_id, set_order, weight, weight_unit,
+        reps, completed, set_type
+    ` : await sql`
       INSERT INTO workout_sets
         (session_exercise_id, set_order, weight, weight_unit, reps,
          completed, set_type)

@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import HelpLink from '@/app/components/HelpLink';
 
 function formatDate(value) {
   if (!value) return '';
@@ -22,8 +23,8 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    (async () => {
+  const loadHistory = useCallback(async ({ quiet = false } = {}) => {
+      if (!quiet) setLoading(true);
       try {
         const res = await fetch('/api/sessions');
         if (res.status === 401) {
@@ -39,17 +40,23 @@ export default function HistoryPage() {
       } catch {
         setError('Could not load history.');
       } finally {
-        setLoading(false);
+        if (!quiet) setLoading(false);
       }
-    })();
   }, []);
+
+  useEffect(() => {
+    loadHistory();
+    const onSyncComplete = () => loadHistory({ quiet: true });
+    window.addEventListener('gymnotes:sync-complete', onSyncComplete);
+    return () => window.removeEventListener('gymnotes:sync-complete', onSyncComplete);
+  }, [loadHistory]);
 
   const inProgress = sessions.filter((s) => s.status === 'in_progress');
   const past = sessions.filter((s) => s.status !== 'in_progress');
 
   return (
     <main className="container">
-      <header className="page-header"><p className="eyebrow">Training log</p><h1 className="page-title">History</h1><p className="page-lead">Your completed work, session by session.</p></header>
+      <header className="page-header"><p className="eyebrow">Training log</p><h1 className="page-title">History</h1><p className="page-lead">Your completed work, session by session.</p><HelpLink topic="history" /></header>
 
       {error && (
         <div className="notice notice-error" role="alert">

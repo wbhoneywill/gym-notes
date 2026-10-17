@@ -114,6 +114,31 @@ git push -u origin feature/short-description
 Built and deployed: foundation (auth, DB, email, tests, deploy), exercise library,
 workout templates, live training with set logging, and training history.
 
-Planned next: **offline-first operation + installable PWA** (the headline remaining
-feature), then progress analytics, then production hardening. See
-`.kiro/specs/workout-tracker/tasks.md` for the full milestone plan.
+The installable PWA shell, active-workout recovery, and first synchronization slice are
+implemented. Blank or cached-plan workouts, exercise/set structure, set values, and finalization
+can be queued locally and acknowledged updates replay idempotently. Previously visited recorder
+routes can launch from the production PWA shell without caching private API data. Rejected changes
+stop retrying and can be reviewed, retried, or discarded from Settings → Offline sync. Offline plan
+editing and physical-iPhone acceptance remain before complete offline-first operation can be
+claimed. See `.kiro/specs/workout-tracker/tasks.md`.
+
+Offline synchronization is drained in dependency-safe batches. Exercise rest durations and recorded
+rest outcomes are available in the offline recorder, and History refreshes when a completed local
+workout is acknowledged after reconnecting.
+
+Opening Train online also prepares a generic recorder shell, allowing a newly generated blank or
+cached-plan session to open offline even though its UUID route has never been visited before.
+
+New accounts also receive a skippable first-run setup for unit, goal, experience, and
+training-day preferences, with an optional starter plan and guided first-workout handoff.
+Existing accounts are preserved as already onboarded; the profile remains editable in Settings.
+
+## Third-party exercise visuals
+
+Selected start/finish images are vendored from
+[Free Exercise DB](https://github.com/yuhonas/free-exercise-db). The upstream dataset is
+released into the public domain under the Unlicense; a copy is preserved at
+`public/vendor/free-exercise-db/LICENSE.md`. GymNotes stores reviewed provider IDs and
+serves the selected files locally so demonstrations remain available offline and do not
+depend on a third-party API. The provider-neutral mapping also retains an optional
+animation field for a future properly licensed source.

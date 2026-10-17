@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { SignOutButton } from '@clerk/nextjs';
+import SyncManager from '@/app/components/SyncManager';
 
 const items = [
   { href: '/dashboard', label: 'Home', icon: 'home' },
@@ -13,7 +15,7 @@ const items = [
 
 // App pages that use the shell/header but are not in the bottom nav
 // (reached from the dashboard), kept out of the 5-item mobile bar.
-const extraAppPaths = ['/progress', '/settings'];
+const extraAppPaths = ['/progress', '/settings', '/help'];
 
 function NavIcon({ name }) {
   const paths = {
@@ -46,12 +48,24 @@ export default function AppShell({ children }) {
         <Link className="app-wordmark" href="/dashboard" aria-label="GymNotes home">
           GYM<span>NOTES</span>
         </Link>
-        <Link className="app-settings-link" href="/settings" aria-label="Settings">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="22" height="22">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </Link>
+        <div className="app-header-actions">
+          <SyncManager />
+          <Link className="app-help-link" href="/help" aria-label="Help and frequently asked questions">?</Link>
+          <Link className="app-settings-link" href="/settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="22" height="22">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </Link>
+          <SignOutButton redirectUrl="/">
+            <button className="app-logout-button" type="button" aria-label="Log out" title="Log out">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="22" height="22">
+                <path d="M10 5H5v14h5" />
+                <path d="M14 8l4 4-4 4M18 12H9" />
+              </svg>
+            </button>
+          </SignOutButton>
+        </div>
       </header>
       <div className="app-content">{children}</div>
       {!isLiveSession && (

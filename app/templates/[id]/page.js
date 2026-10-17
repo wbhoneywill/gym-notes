@@ -2,6 +2,8 @@
 
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
+import GroupedExerciseOptions from '@/app/components/GroupedExerciseOptions';
+import ExerciseBodyPreview from '@/app/components/ExerciseBodyPreview';
 
 export default function TemplateEditorPage({ params }) {
   const { id } = use(params);
@@ -15,6 +17,7 @@ export default function TemplateEditorPage({ params }) {
   const [name, setName] = useState('');
   const [selectedExercise, setSelectedExercise] = useState('');
   const [targetSets, setTargetSets] = useState('');
+  const selectedExerciseDetails = allExercises.find((exercise) => exercise.id === selectedExercise) ?? null;
 
   async function load() {
     setLoading(true);
@@ -315,13 +318,10 @@ export default function TemplateEditorPage({ params }) {
             onChange={(e) => setSelectedExercise(e.target.value)}
           >
             <option value="">— choose an exercise —</option>
-            {allExercises.map((ex) => (
-              <option key={ex.id} value={ex.id}>
-                {ex.name}
-              </option>
-            ))}
+            <GroupedExerciseOptions exercises={allExercises} />
           </select>
         </div>
+        <ExerciseBodyPreview exercise={selectedExerciseDetails} />
         <div className="field">
           <label htmlFor="target-sets">Target sets (optional)</label>
           <input

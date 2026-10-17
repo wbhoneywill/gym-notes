@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { convertWeight } from '@/app/lib/metrics';
+import HelpLink from '@/app/components/HelpLink';
 
 function weekLabel(value) {
   try {
@@ -82,7 +83,7 @@ export default function ProgressPage() {
 
   return (
     <main className="container">
-      <h1 className="page-title">Progress</h1>
+      <header className="page-header"><p className="eyebrow">Analytics</p><h1 className="page-title">Progress</h1><p className="page-lead">Understand your training trends over time.</p><HelpLink topic="progress" /></header>
 
       {error && (
         <div className="notice notice-error" role="alert">
@@ -158,7 +159,7 @@ export default function ProgressPage() {
                 <tbody>
                   {points.map((p) => (
                     <tr key={p.session_id}>
-                      <td style={{ textAlign: 'left' }}>{weekLabel(p.started_at)}</td>
+                      <td style={{ textAlign: 'left' }}><Link href={`/history/${p.session_id}`}>{weekLabel(p.started_at)}</Link></td>
                       <td className="num">{toUnit(p.volume_kg).toLocaleString()}</td>
                       <td className="num">{toUnit(p.top_weight_kg)}</td>
                       <td style={{ width: '35%' }}>

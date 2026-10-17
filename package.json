@@ -22,7 +22,8 @@
     "next": "^16.4.0",
     "nodemailer": "^10.1.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-muscle-highlighter": "1.2.0"
   },
   "devDependencies": {
     "@jest/globals": "^30.5.2",

@@ -172,6 +172,24 @@ that templates and sessions reference consistent, extensible exercise data.
    taxonomy expansion.
 3. WHEN the frontend lists exercises or muscle groups THEN those values SHALL come from data,
    not be hardcoded into components.
+4. WHEN choosing an exercise THEN the user SHALL be able to browse movements grouped and
+   filtered by primary body group in the library, template builder, and live workout.
+5. WHEN a new account opens the shared library THEN it SHALL include a useful selection of
+   common movements across the major seeded body groups.
+6. WHEN browsing the exercise library THEN the user SHALL be able to select a primary body
+   group from a front/back visual guide, see the selected region highlighted, and retain an
+   equivalent labelled control that does not depend on interpreting or operating the image.
+7. WHEN choosing an exercise in a template or live workout THEN the selected movement's
+   primary body group SHALL be shown with a compact highlighted body preview and a text label.
+8. WHEN selecting Front or Back on the exercise-library body guide THEN the visible catalogue
+   SHALL include only groups mapped to that side, while selecting a specific labelled group
+   SHALL continue to filter to that group alone.
+9. WHEN an exercise has licensed demonstration media THEN exercise detail and live training
+   SHALL expose it behind a user-controlled disclosure, avoid guessing media for unmatched
+   exercises, and visibly preserve any required provider attribution.
+10. WHEN a customer installs GymNotes from a supported browser THEN the application SHALL
+    provide branded icons and a standalone presentation, while clearly distinguishing
+    installability from offline workout support.
 
 ### Requirement 5: Live training (later milestone)
 
@@ -190,6 +208,18 @@ last performance, so that I can progress without friction.
    skip, and reorder exercises, without losing data when moving between exercises.
 5. WHEN ending a session THEN the user SHALL finish or abandon it with appropriate
    confirmation, and SHALL be able to resume an unfinished session.
+6. WHEN finishing a session with entered weight or repetition values on an incomplete set
+   THEN the app SHALL clearly confirm that those recorded sets will be marked complete and
+   SHALL persist them before finalizing the session.
+7. WHEN an exercise has a rest duration and its set is successfully marked complete THEN a
+   rest countdown SHALL start automatically, remain accurate across page refreshes, allow the
+   user to add time or skip it, and provide a visible plus device-supported sound/vibration
+   alert when recovery ends.
+8. WHEN training is in progress THEN the user SHALL be able to enable, disable, or adjust the
+   session exercise's rest duration without changing the original plan.
+9. WHEN a rest timer is active THEN the user SHALL be able to indicate that the next set is
+   starting, and the completed set SHALL retain planned rest, actual elapsed rest, and whether
+   the user completed, shortened, or skipped recovery for later history and comparison.
 
 ### Requirement 6: Set tracking (later milestone)
 
@@ -223,6 +253,8 @@ results separately from planned targets.
    from planned targets, and unfinished sessions SHALL be resumable.
 3. WHEN a session is completed or abandoned THEN exercise and set mutation endpoints SHALL treat
    its recorded results as immutable and return 404 for attempted nested writes.
+4. WHEN inspecting workout or exercise history THEN each exercise SHALL identify its primary
+   trained body group with a text label and a compact highlighted body preview when mapped.
 
 ### Requirement 8: Offline-first operation (later milestone, mandatory for MVP)
 
@@ -240,6 +272,69 @@ dead zones never cost me data.
 4. WHEN synchronization state changes THEN it SHALL be displayed clearly, and no change SHALL
    be claimed synchronized until the server acknowledges it.
 5. WHEN a synchronization attempt fails THEN the locally persisted workout SHALL NOT be erased.
+
+**Implemented recovery slice (2026-10-17):** the live recorder persists its latest active-session
+snapshot and dirty weight/repetition fields in IndexedDB. A refresh restores unacknowledged input;
+when the session request fails at the network layer, the cached recorder remains available for
+weight/repetition entry while server-dependent controls are disabled. This does **not** yet satisfy
+the full offline-workout criterion: offline session creation, structural mutations, completion,
+asset/app-shell caching, and synchronization remain Milestones 6–7 work.
+
+**Implemented synchronization slice (2026-10-17):** failed active-set updates are queued in
+IndexedDB with stable client change UUIDs. The authenticated batch endpoint atomically checks
+ownership and in-progress status, records the idempotency key, and applies each set patch. Replays
+are acknowledged without a second write; cross-user/finalized-session changes are rejected without
+entering the ledger. The client retries on app open, focus, visibility regain, and `online`, and
+shows pending/syncing/attention state. A production service worker caches immutable static assets
+and provides a privacy-safe offline fallback without caching authenticated HTML or API responses.
+Template-based offline starts, offline plan editing, complete cold-launch coverage, and
+physical-iPhone acceptance remains required before the entire offline roadmap is complete.
+
+The next structural slice adds client-identified set creation and queued completed/abandoned
+session finalization for an already loaded workout. Queue order guarantees set creation and final
+values are acknowledged before the session becomes immutable. Starting a new session offline,
+adding/removing exercises offline, deleting sets offline, and a complete cold-launch recorder still
+remain outside the implemented boundary.
+
+The following slice adds offline blank-session creation, a per-user cached exercise catalogue,
+queued exercise addition/removal, and queued set deletion. A locally created session is authorized
+by the current Clerk user and recovered from that user's IndexedDB namespace while its server
+creation is pending. Template-based offline starts and offline plan editing remain deferred.
+
+Cached-plan starts are now implemented. After Train loads a plan online, its ordered exercises and
+targets are stored in the authenticated user's IndexedDB namespace. An offline start creates a
+local session snapshot with fresh UUIDs, queues the plan-linked session, and then queues each
+snapshotted exercise. This preserves the plan as it existed when training began even if the plan
+changes before synchronization. Offline plan editing remains deferred.
+
+Cold-launch support is implemented for a previously visited Train or active-workout route in a
+production/PWA build. The service worker stores only the generic recorder HTML shell and executable
+assets; it never stores API responses or embeds workout data in Cache Storage. The hydrated page
+resolves the current Clerk user and reads only that user's IndexedDB snapshot and queue. Unvisited
+screens still use the privacy-safe offline fallback. Physical-iPhone acceptance remains required.
+
+User-directed conflict resolution is implemented at `/settings/sync`. A rejected or invalid
+change stops automatic retries but remains in the current user's IndexedDB queue with its attempted
+values. The user can retry individual/all conflicts, or confirm that the server version should win;
+discarding clears only that local change and its corresponding draft fields. Completed server
+history remains immutable.
+
+Queue synchronization drains in dependency-safe batches of no more than 50, so a workout with many
+set edits cannot exceed the endpoint contract and finalization cannot overtake tied creation/set
+writes. Rest duration can be selected per exercise offline; the local snapshot updates immediately
+and the owned in-progress exercise setting synchronizes idempotently after reconnecting. History
+refreshes when synchronization completes.
+
+A new offline workout opens through a generic recorder shell that `/train` pre-caches while online,
+with the new UUID supplied locally rather than requiring its never-visited route to exist in Cache
+Storage. The last online-authenticated owner key selects the user's local namespace only while the
+device is offline and is cleared by an online signed-out state. Offline API failures are queueable
+even if Clerk temporarily cannot expose its live session, and the start action is single-flight to
+prevent accidental duplicate sessions.
+An upgraded client that has no remembered marker MAY recover a unique owner from existing local
+drafts, queue entries, or catalogues; it SHALL NOT choose when more than one owner is present.
+WHEN an offline-capable local server responds with 5xx rather than producing a transport exception,
+the recorder SHALL load the matching user-scoped draft just as it does for a failed request.
 
 ### Requirement 9: Synchronization (later milestone)
 
@@ -275,6 +370,17 @@ metrics can be derived accurately later without rework.
    stored redundant aggregates as the authoritative source.
 4. WHEN scoping the MVP THEN complex coaching recommendations and AI features SHALL NOT be
    implemented.
+5. WHEN viewing an exercise's history THEN the user SHALL see each session with completed
+   working sets, including date, workout name, set count, volume, top weight and repetitions,
+   and SHALL be able to open the source workout record.
+6. WHEN viewing a completed workout that strictly improves on an earlier completed baseline THEN
+   the user SHALL see derived personal records for the heaviest completed working set, most
+   repetitions at the same normalized weight, highest single-set volume, and highest total workout
+   volume; a first performance SHALL establish a baseline rather than a record.
+7. WHEN presenting personal records THEN the UI SHALL celebrate measured progress without urging
+   maximum-weight attempts or presenting derived metrics as medical or coaching advice.
+8. WHEN a personal record is presented THEN the earlier best and improved result SHALL appear in
+   one comparison, identifying and linking the source workout when it is available.
 
 ### Requirement 11: Authentication and multi-user readiness
 
@@ -309,13 +415,22 @@ feels like a dedicated workout tool during training.
    preferred unit, and conversions SHALL preserve the intended physical values.
 5. WHEN the UI is built THEN it SHALL use accessible semantic markup, keyboard navigation where
    applicable, and sufficient contrast.
+6. WHEN a user needs guidance THEN the app SHALL provide searchable, accessible help for each
+   main section, explain core training terms and calculations, and link to relevant guidance
+   from the section where it is needed.
+7. WHEN a new account first enters the application THEN it SHALL offer a skippable onboarding
+   flow for unit, goal, experience, and training-day preferences; MAY create one explicitly
+   selected starter plan; and SHALL let the user revise profile preferences later.
 
 **Current implementation note:** The authenticated application now uses a persistent
 mobile navigation shell outside the focused live-session route. The live recorder keeps
 set inputs and completion controls thumb-accessible, shows previous performance without an
 extra tap, provides visible save/error feedback, and keeps the finish action in a safe-area
-aware sticky footer. Offline/synchronization status remains Milestone 6 work and is not
-represented as implemented.
+aware sticky footer. An optional timestamp-based rest timer starts after a completed set is
+saved, persists locally across refreshes, and provides skip/add-time controls plus supported
+sound and vibration cues. Starting the next set records actual versus planned recovery on the
+preceding set, which is shown in workout history and the next workout's previous-performance
+strip. Offline/synchronization status remains Milestone 6 work and is not represented as implemented.
 
 ### Requirement 13: Security and data integrity
 
@@ -349,6 +464,26 @@ training loop.
    explicitly requested.
 2. WHEN writing code THEN speculative features and unnecessary abstractions/dependencies SHALL
    be avoided while keeping the code reasonably extensible.
+
+### Requirement 15: Weekly workout scheduling
+
+**User Story:** As a user, I want to arrange reusable plans across my week, so that I can see my
+intended training rhythm without workouts starting automatically.
+
+#### Acceptance Criteria
+
+1. WHEN managing plans THEN the user SHALL be able to assign an owned active plan to a weekday
+   with an optional local preferred time.
+2. WHEN a plan and weekday are scheduled again THEN the existing slot SHALL be updated rather
+   than duplicated.
+3. WHEN viewing the schedule THEN the current local weekday SHALL be identified and slots SHALL
+   be ordered by weekday and time.
+4. WHEN removing or archiving a plan THEN its schedule SHALL be removable or cascade safely while
+   completed workout history remains unchanged.
+5. WHEN scheduling a workout THEN the application SHALL NOT start it automatically or claim that
+   a notification will be delivered.
+6. WHEN accessing a schedule THEN ownership SHALL be enforced in SQL and inaccessible resources
+   SHALL return 404 rather than revealing another user's data.
 
 ---
 

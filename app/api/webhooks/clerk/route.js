@@ -42,8 +42,8 @@ export async function POST(req) {
         null;
 
       await sql`
-        INSERT INTO users (clerk_user_id, email, name)
-        VALUES (${clerkUserId}, ${primaryEmail}, ${name})
+        INSERT INTO users (clerk_user_id, email, name, onboarding_completed)
+        VALUES (${clerkUserId}, ${primaryEmail}, ${name}, FALSE)
         ON CONFLICT (clerk_user_id)
         DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name
       `;

@@ -37,7 +37,9 @@ export async function GET(_request, { params }) {
 
     const sets = await sql`
       SELECT ws.id, ws.session_exercise_id, ws.set_order, ws.weight,
-             ws.weight_unit, ws.reps, ws.completed, ws.set_type
+             ws.weight_unit, ws.reps, ws.completed, ws.set_type,
+             ws.planned_rest_seconds, ws.rest_duration_seconds,
+             ws.rest_outcome
       FROM workout_sets ws
       JOIN session_exercises se ON se.id = ws.session_exercise_id
       WHERE se.session_id = ${id}

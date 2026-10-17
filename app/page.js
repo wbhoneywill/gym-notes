@@ -4,11 +4,11 @@ import { auth } from '@clerk/nextjs/server';
 export const metadata = {
   title: 'GymNotes — a performance instrument for the gym',
   description:
-    'Plan, record, and review your training — offline, every rep. Quiet strength. Measurable progress. No distractions.',
+    'Plan, record, and review your training. Quiet strength. Measurable progress. No distractions.',
 };
 
 const features = [
-  { name: 'Offline-first', desc: 'Every rep, no signal needed' },
+  { name: 'Installable', desc: 'Focused Home Screen experience' },
   { name: 'Previous performance', desc: 'Beat last time' },
   { name: 'Reusable templates', desc: 'Push / Pull / Legs' },
   { name: 'Private by default', desc: 'Your training is yours' },
@@ -32,8 +32,7 @@ export default async function HomePage() {
         Measurable <span className="dim">progress.</span>
       </h1>
       <p className="landing-sub">
-        A performance instrument for the gym. Plan, record, and review — offline,
-        every rep.
+        A performance instrument for the gym. Plan, record, and review every rep.
       </p>
 
       <div className="landing-cta">

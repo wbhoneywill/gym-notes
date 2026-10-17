@@ -6,7 +6,15 @@ import {
   makeRequest,
 } from '../setup.js';
 
-const USER = { id: 3, clerk_user_id: 'u3', preferred_unit: 'kg' };
+const USER = {
+  id: 3,
+  clerk_user_id: 'u3',
+  preferred_unit: 'kg',
+  training_goal: 'muscle',
+  experience_level: 'intermediate',
+  training_days_per_week: 4,
+  onboarding_completed: true,
+};
 
 describe('/api/settings', () => {
   let GET, PATCH;
@@ -20,12 +28,18 @@ describe('/api/settings', () => {
     expect((await GET()).status).toBe(401);
   });
 
-  it('GET returns the preferred unit', async () => {
+  it('GET returns the saved training profile', async () => {
     mockGetDbUser.mockResolvedValue(USER);
     const res = await GET();
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({
-      settings: { preferred_unit: 'kg' },
+      settings: {
+        preferred_unit: 'kg',
+        training_goal: 'muscle',
+        experience_level: 'intermediate',
+        training_days_per_week: 4,
+        onboarding_completed: true,
+      },
     });
   });
 

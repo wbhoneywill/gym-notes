@@ -2,7 +2,9 @@
 
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { totalVolume, workingSetCount } from '@/app/lib/metrics';
+import { convertWeight, formatWeight, totalVolume, workingSetCount } from '@/app/lib/metrics';
+import ExerciseBodyPreview from '@/app/components/ExerciseBodyPreview';
+import { formatRestTime } from '@/app/lib/rest-timer';
 
 function formatDate(value) {
   if (!value) return '';
@@ -20,10 +22,51 @@ function formatDate(value) {
   }
 }
 
+function formatVolume(valueKg, unit) {
+  return `${Math.round(convertWeight(valueKg, 'kg', unit)).toLocaleString()} ${unit} volume`;
+}
+
+function formatShortDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function workoutLabel(reference, fallback = 'Workout') {
+  if (!reference) return fallback;
+  const date = formatShortDate(reference.started_at);
+  return `${reference.session_name || fallback}${date ? ` · ${date}` : ''}`;
+}
+
+function recordCopy(record, unit) {
+  if (record.type === 'heaviest_set') {
+    return {
+      label: 'Heaviest completed set',
+      previous: `${formatWeight(record.previous_weight_kg, unit, { decimals: 1 })} × ${record.previous_reps}`,
+      current: `${formatWeight(record.weight_kg, unit, { decimals: 1 })} × ${record.reps}`,
+      note: 'Build confidence at this load before adding more.',
+    };
+  }
+  if (record.type === 'reps_at_weight') {
+    return {
+      label: 'Most reps at this weight',
+      previous: `${record.previous_reps} reps at ${formatWeight(record.weight_kg, unit, { decimals: 1 })}`,
+      current: `${record.reps} reps at ${formatWeight(record.weight_kg, unit, { decimals: 1 })}`,
+      note: `Up from ${record.previous_reps} reps at the same load.`,
+    };
+  }
+  return {
+    label: 'Best set volume',
+    previous: formatVolume(record.previous_volume_kg, unit),
+    current: formatVolume(record.volume_kg, unit),
+    note: `${formatWeight(record.weight_kg, unit, { decimals: 1 })} × ${record.reps} controlled reps.`,
+  };
+}
+
 export default function HistorySessionPage({ params }) {
   const { id } = use(params);
   const [session, setSession] = useState(null);
   const [unit, setUnit] = useState('kg');
+  const [achievements, setAchievements] = useState({ records: [], workoutRecord: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -45,10 +88,20 @@ export default function HistorySessionPage({ params }) {
         }
         const data = await res.json();
         setSession(data.session);
-        const setRes = await fetch('/api/settings');
+        const [setRes, recordsRes] = await Promise.all([
+          fetch('/api/settings'),
+          fetch(`/api/sessions/${id}/records`),
+        ]);
         if (setRes.ok) {
           const setData = await setRes.json();
           setUnit(setData.settings?.preferred_unit ?? 'kg');
+        }
+        if (recordsRes.ok) {
+          const recordsData = await recordsRes.json();
+          setAchievements({
+            records: recordsData.records ?? [],
+            workoutRecord: recordsData.workoutRecord ?? null,
+          });
         }
       } catch {
         setError('Could not load the session.');
@@ -95,11 +148,87 @@ export default function HistorySessionPage({ params }) {
         Total working volume: {Math.round(sessionVolume).toLocaleString()} {unit}
       </p>
 
+      {(achievements.workoutRecord || achievements.records.length > 0) && (
+        <section className="personal-records-panel" aria-labelledby="personal-records-heading">
+          <div className="personal-records-heading">
+            <div>
+              <span className="eyebrow">Personal records</span>
+              <h2 id="personal-records-heading">New bests</h2>
+            </div>
+            <span className="personal-records-mark" aria-hidden="true">↗</span>
+          </div>
+          <p className="personal-records-guidance">
+            Progress from completed working sets. Keep technique controlled—this is not a prompt to
+            attempt a maximum.
+          </p>
+          <div className="personal-records-grid">
+            {achievements.workoutRecord && (
+              <article className="personal-record-card">
+                <span>Highest workout volume</span>
+                <div className="personal-record-comparison">
+                  <div>
+                    <small>Previous best</small>
+                    <strong>{formatVolume(achievements.workoutRecord.previous_volume_kg, unit)}</strong>
+                    {achievements.workoutRecord.previous_session?.session_id ? (
+                      <Link href={`/history/${achievements.workoutRecord.previous_session.session_id}`}>
+                        {workoutLabel(achievements.workoutRecord.previous_session)}
+                      </Link>
+                    ) : <em>Earlier workout</em>}
+                  </div>
+                  <b aria-hidden="true">→</b>
+                  <div className="improved">
+                    <small>This workout</small>
+                    <strong>{formatVolume(achievements.workoutRecord.volume_kg, unit)}</strong>
+                    <em>{workoutLabel(achievements.workoutRecord.current_session, session.name || 'Workout')}</em>
+                  </div>
+                </div>
+              </article>
+            )}
+            {achievements.records.map((record) => {
+              const copy = recordCopy(record, unit);
+              return (
+                <article
+                  className="personal-record-card"
+                  key={`${record.type}-${record.exercise_id}`}
+                >
+                  <span>{record.exercise_name} · {copy.label}</span>
+                  <div className="personal-record-comparison">
+                    <div>
+                      <small>Previous best</small>
+                      <strong>{copy.previous}</strong>
+                      {record.previous_session?.session_id ? (
+                        <Link href={`/history/${record.previous_session.session_id}`}>
+                          {workoutLabel(record.previous_session)}
+                        </Link>
+                      ) : <em>Earlier workout</em>}
+                    </div>
+                    <b aria-hidden="true">→</b>
+                    <div className="improved">
+                      <small>This workout</small>
+                      <strong>{copy.current}</strong>
+                      <em>{workoutLabel(record, session.name || 'Workout')}</em>
+                    </div>
+                  </div>
+                  <small className="personal-record-note">{copy.note}</small>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {session.exercises.length === 0 ? (
         <p>No exercises were recorded.</p>
       ) : (
         session.exercises.map((ex) => {
           const completedSets = ex.sets.filter((s) => s.completed);
+          const recordedRests = completedSets
+            .filter((set) => set.rest_duration_seconds !== null && set.rest_duration_seconds !== undefined)
+            .map((set) => Number(set.rest_duration_seconds))
+            .filter((seconds) => Number.isFinite(seconds));
+          const averageRest = recordedRests.length
+            ? Math.round(recordedRests.reduce((sum, seconds) => sum + seconds, 0) / recordedRests.length)
+            : null;
           return (
             <section
               key={ex.id}
@@ -110,11 +239,12 @@ export default function HistorySessionPage({ params }) {
                 {ex.exercise_name}
                 {ex.skipped && <span className="badge">skipped</span>}
               </div>
+              <ExerciseBodyPreview exercise={ex} compact />
               <div className="meta">
                 {[
-                  ex.primary_muscle_group,
                   `${workingSetCount(ex.sets)} working sets`,
-                  `${Math.round(totalVolume(ex.sets, unit)).toLocaleString()} ${unit}`,
+                  `${Math.round(totalVolume(ex.sets, unit)).toLocaleString()} ${unit} volume`,
+                  averageRest === null ? null : `${formatRestTime(averageRest)} average rest`,
                 ]
                   .filter(Boolean)
                   .join(' · ')}
@@ -130,6 +260,7 @@ export default function HistorySessionPage({ params }) {
                       <th>weight</th>
                       <th>reps</th>
                       <th>type</th>
+                      <th>rest</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -141,6 +272,11 @@ export default function HistorySessionPage({ params }) {
                         </td>
                         <td>{s.reps ?? '-'}</td>
                         <td>{s.set_type === 'warmup' ? 'warm-up' : 'working'}</td>
+                        <td>
+                          {s.rest_duration_seconds === null || s.rest_duration_seconds === undefined
+                            ? '—'
+                            : `${formatRestTime(s.rest_duration_seconds)}${s.planned_rest_seconds ? ` / ${formatRestTime(s.planned_rest_seconds)}` : ''}`}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -23,8 +23,13 @@ export async function POST(request, { params }) {
 
   const exerciseId =
     typeof body?.exercise_id === 'string' ? body.exercise_id : null;
+  const sessionExerciseId = typeof body?.id === 'string' && body.id ? body.id : null;
+  const requestedPosition = body.position === undefined ? null : Number(body.position);
   if (!exerciseId) {
     return Response.json({ error: 'exercise_id is required' }, { status: 400 });
+  }
+  if (requestedPosition !== null && (!Number.isInteger(requestedPosition) || requestedPosition < 0)) {
+    return Response.json({ error: 'position must be a non-negative integer' }, { status: 400 });
   }
 
   try {
@@ -55,7 +60,11 @@ export async function POST(request, { params }) {
       FROM session_exercises WHERE session_id = ${id}
     `;
 
-    const rows = await sql`
+    const rows = sessionExerciseId ? await sql`
+      INSERT INTO session_exercises (id, session_id, exercise_id, position)
+      VALUES (${sessionExerciseId}, ${id}, ${exerciseId}, ${requestedPosition ?? next[0].next})
+      RETURNING id, exercise_id, position, skipped
+    ` : await sql`
       INSERT INTO session_exercises (session_id, exercise_id, position)
       VALUES (${id}, ${exerciseId}, ${next[0].next})
       RETURNING id, exercise_id, position, skipped

@@ -38,6 +38,44 @@ const migrations = [
     `,
   },
 
+  // Existing accounts remain uninterrupted; after this column is added its
+  // default is changed to false so newly provisioned users enter onboarding.
+  {
+    name: 'users.onboarding_completed',
+    run: () => sql`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT TRUE;
+    `,
+  },
+  {
+    name: 'users.onboarding_completed_default',
+    run: () => sql`
+      ALTER TABLE users
+        ALTER COLUMN onboarding_completed SET DEFAULT FALSE;
+    `,
+  },
+  {
+    name: 'users.training_goal',
+    run: () => sql`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS training_goal TEXT;
+    `,
+  },
+  {
+    name: 'users.experience_level',
+    run: () => sql`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS experience_level TEXT;
+    `,
+  },
+  {
+    name: 'users.training_days_per_week',
+    run: () => sql`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS training_days_per_week INTEGER;
+    `,
+  },
+
   // Reference taxonomy. Seeded, never client-created, so a SERIAL id is fine.
   {
     name: 'muscle_groups',
@@ -139,6 +177,25 @@ const migrations = [
     `,
   },
 
+  // Optional recurring weekly slots for owned plans. Times are intentionally
+  // local wall-clock values; this MVP does not schedule server push jobs.
+  {
+    name: 'workout_schedules',
+    run: () => sql`
+      CREATE TABLE IF NOT EXISTS workout_schedules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+        weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+        local_time TIME,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (owner_user_id, template_id, weekday)
+      );
+    `,
+  },
+
   // Snapshot of an exercise within a session. Keeps a reference to the source
   // exercise plus snapshotted planned targets.
   {
@@ -179,6 +236,27 @@ const migrations = [
       );
     `,
   },
+  {
+    name: 'workout_sets_planned_rest_seconds',
+    run: () => sql`
+      ALTER TABLE workout_sets
+      ADD COLUMN IF NOT EXISTS planned_rest_seconds INTEGER;
+    `,
+  },
+  {
+    name: 'workout_sets_rest_duration_seconds',
+    run: () => sql`
+      ALTER TABLE workout_sets
+      ADD COLUMN IF NOT EXISTS rest_duration_seconds INTEGER;
+    `,
+  },
+  {
+    name: 'workout_sets_rest_outcome',
+    run: () => sql`
+      ALTER TABLE workout_sets
+      ADD COLUMN IF NOT EXISTS rest_outcome TEXT;
+    `,
+  },
 
   // Idempotency ledger for sync. A (owner_user_id, client_change_id) pair is
   // recorded once a change is applied; replays become no-ops.
@@ -214,6 +292,10 @@ const migrations = [
   {
     name: 'idx_sessions_owner',
     run: () => sql`CREATE INDEX IF NOT EXISTS idx_sessions_owner ON training_sessions(owner_user_id);`,
+  },
+  {
+    name: 'idx_workout_schedules_owner_weekday',
+    run: () => sql`CREATE INDEX IF NOT EXISTS idx_workout_schedules_owner_weekday ON workout_schedules(owner_user_id, weekday);`,
   },
   {
     name: 'idx_session_exercises_session',
@@ -278,6 +360,106 @@ const migrations = [
         (NULL, 'Standing Calf Raise',      (SELECT id FROM muscle_groups WHERE name = 'Calves'),     'Machine',  'Isolation'),
         (NULL, 'Plank',                    (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Bodyweight','Core'),
         (NULL, 'Hip Thrust',               (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Barbell',  'Legs')
+      ON CONFLICT (name) WHERE owner_user_id IS NULL DO NOTHING;
+    `,
+  },
+
+  // Expand the shared catalogue across the seeded body-group taxonomy.
+  // The partial unique index makes repeat deploys safe.
+  {
+    name: 'expand_shared_exercise_catalogue',
+    run: () => sql`
+      INSERT INTO exercises (owner_user_id, name, primary_muscle_group_id, equipment, movement_category)
+      VALUES
+        (NULL, 'Dumbbell Bench Press',         (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Dumbbell',   'Push'),
+        (NULL, 'Push-Up',                       (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Bodyweight', 'Push'),
+        (NULL, 'Cable Fly',                     (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Cable',      'Isolation'),
+        (NULL, 'Seated Cable Row',              (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Cable',      'Pull'),
+        (NULL, 'Chest-Supported Row',           (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Dumbbell',   'Pull'),
+        (NULL, 'Single-Arm Dumbbell Row',       (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Dumbbell',   'Pull'),
+        (NULL, 'Chin-Up',                       (SELECT id FROM muscle_groups WHERE name = 'Lats'),       'Bodyweight', 'Pull'),
+        (NULL, 'Straight-Arm Pulldown',         (SELECT id FROM muscle_groups WHERE name = 'Lats'),       'Cable',      'Isolation'),
+        (NULL, 'Arnold Press',                  (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Dumbbell',   'Push'),
+        (NULL, 'Rear Delt Fly',                 (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Dumbbell',   'Isolation'),
+        (NULL, 'Machine Shoulder Press',        (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Machine',    'Push'),
+        (NULL, 'Hammer Curl',                   (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'Dumbbell',   'Isolation'),
+        (NULL, 'Incline Dumbbell Curl',         (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'Dumbbell',   'Isolation'),
+        (NULL, 'Cable Curl',                    (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'Cable',      'Isolation'),
+        (NULL, 'Skull Crusher',                 (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Barbell',    'Isolation'),
+        (NULL, 'Overhead Triceps Extension',    (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Dumbbell',   'Isolation'),
+        (NULL, 'Close-Grip Bench Press',        (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Barbell',    'Push'),
+        (NULL, 'Front Squat',                   (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Barbell',    'Legs'),
+        (NULL, 'Bulgarian Split Squat',         (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Dumbbell',   'Legs'),
+        (NULL, 'Leg Extension',                 (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Machine',    'Isolation'),
+        (NULL, 'Walking Lunge',                 (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Dumbbell',   'Legs'),
+        (NULL, 'Lying Leg Curl',                (SELECT id FROM muscle_groups WHERE name = 'Hamstrings'), 'Machine',    'Isolation'),
+        (NULL, 'Good Morning',                  (SELECT id FROM muscle_groups WHERE name = 'Hamstrings'), 'Barbell',    'Legs'),
+        (NULL, 'Glute Bridge',                  (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Bodyweight', 'Legs'),
+        (NULL, 'Cable Kickback',                (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Cable',      'Isolation'),
+        (NULL, 'Seated Calf Raise',             (SELECT id FROM muscle_groups WHERE name = 'Calves'),     'Machine',    'Isolation'),
+        (NULL, 'Hanging Leg Raise',             (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Bodyweight', 'Core'),
+        (NULL, 'Cable Crunch',                  (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Cable',      'Core'),
+        (NULL, 'Russian Twist',                 (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Bodyweight', 'Core'),
+        (NULL, 'Dumbbell Shrug',                (SELECT id FROM muscle_groups WHERE name = 'Traps'),      'Dumbbell',   'Pull'),
+        (NULL, 'Farmer Carry',                  (SELECT id FROM muscle_groups WHERE name = 'Forearms'),   'Dumbbell',   'Carry'),
+        (NULL, 'Wrist Curl',                    (SELECT id FROM muscle_groups WHERE name = 'Forearms'),   'Dumbbell',   'Isolation'),
+        (NULL, 'Hip Adduction',                 (SELECT id FROM muscle_groups WHERE name = 'Adductors'),  'Machine',    'Isolation'),
+        (NULL, 'Hip Abduction',                 (SELECT id FROM muscle_groups WHERE name = 'Abductors'),  'Machine',    'Isolation')
+      ON CONFLICT (name) WHERE owner_user_id IS NULL DO NOTHING;
+    `,
+  },
+
+  // Extend the catalogue with more common gym movements and ensure every
+  // visual body side has a useful selection. Safe on repeat deploys.
+  {
+    name: 'expand_shared_exercise_catalogue_v2',
+    run: () => sql`
+      INSERT INTO exercises (owner_user_id, name, primary_muscle_group_id, equipment, movement_category)
+      VALUES
+        (NULL, 'Incline Barbell Bench Press', (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Barbell',    'Push'),
+        (NULL, 'Decline Bench Press',         (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Barbell',    'Push'),
+        (NULL, 'Machine Chest Press',         (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Machine',    'Push'),
+        (NULL, 'Pec Deck',                    (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Machine',    'Isolation'),
+        (NULL, 'Dumbbell Fly',                (SELECT id FROM muscle_groups WHERE name = 'Chest'),      'Dumbbell',   'Isolation'),
+        (NULL, 'T-Bar Row',                   (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Machine',    'Pull'),
+        (NULL, 'Bent-Over Dumbbell Row',      (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Dumbbell',   'Pull'),
+        (NULL, 'Pendlay Row',                 (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Barbell',    'Pull'),
+        (NULL, 'Machine Row',                 (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Machine',    'Pull'),
+        (NULL, 'Back Extension',              (SELECT id FROM muscle_groups WHERE name = 'Back'),       'Bodyweight', 'Pull'),
+        (NULL, 'Neutral-Grip Pulldown',       (SELECT id FROM muscle_groups WHERE name = 'Lats'),       'Cable',      'Pull'),
+        (NULL, 'Assisted Pull-Up',            (SELECT id FROM muscle_groups WHERE name = 'Lats'),       'Machine',    'Pull'),
+        (NULL, 'Dumbbell Pullover',           (SELECT id FROM muscle_groups WHERE name = 'Lats'),       'Dumbbell',   'Pull'),
+        (NULL, 'Front Raise',                 (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Dumbbell',   'Isolation'),
+        (NULL, 'Cable Lateral Raise',         (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Cable',      'Isolation'),
+        (NULL, 'Landmine Press',              (SELECT id FROM muscle_groups WHERE name = 'Shoulders'),  'Barbell',    'Push'),
+        (NULL, 'Preacher Curl',               (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'EZ-Bar',     'Isolation'),
+        (NULL, 'Concentration Curl',          (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'Dumbbell',   'Isolation'),
+        (NULL, 'EZ-Bar Curl',                 (SELECT id FROM muscle_groups WHERE name = 'Biceps'),     'EZ-Bar',     'Isolation'),
+        (NULL, 'Triceps Dip',                 (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Bodyweight', 'Push'),
+        (NULL, 'Rope Pushdown',               (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Cable',      'Isolation'),
+        (NULL, 'Dumbbell Kickback',           (SELECT id FROM muscle_groups WHERE name = 'Triceps'),    'Dumbbell',   'Isolation'),
+        (NULL, 'Hack Squat',                  (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Machine',    'Legs'),
+        (NULL, 'Goblet Squat',                (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Dumbbell',   'Legs'),
+        (NULL, 'Step-Up',                     (SELECT id FROM muscle_groups WHERE name = 'Quadriceps'), 'Dumbbell',   'Legs'),
+        (NULL, 'Seated Leg Curl',             (SELECT id FROM muscle_groups WHERE name = 'Hamstrings'), 'Machine',    'Isolation'),
+        (NULL, 'Nordic Hamstring Curl',       (SELECT id FROM muscle_groups WHERE name = 'Hamstrings'), 'Bodyweight', 'Legs'),
+        (NULL, 'Single-Leg Romanian Deadlift',(SELECT id FROM muscle_groups WHERE name = 'Hamstrings'), 'Dumbbell',   'Legs'),
+        (NULL, 'Sumo Deadlift',               (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Barbell',    'Legs'),
+        (NULL, 'Reverse Lunge',               (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Dumbbell',   'Legs'),
+        (NULL, 'Frog Pump',                   (SELECT id FROM muscle_groups WHERE name = 'Glutes'),     'Bodyweight', 'Isolation'),
+        (NULL, 'Leg Press Calf Raise',        (SELECT id FROM muscle_groups WHERE name = 'Calves'),     'Machine',    'Isolation'),
+        (NULL, 'Donkey Calf Raise',           (SELECT id FROM muscle_groups WHERE name = 'Calves'),     'Bodyweight', 'Isolation'),
+        (NULL, 'Ab Wheel Rollout',            (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Ab Wheel',   'Core'),
+        (NULL, 'Decline Sit-Up',              (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Bodyweight', 'Core'),
+        (NULL, 'Pallof Press',                (SELECT id FROM muscle_groups WHERE name = 'Core'),       'Cable',      'Core'),
+        (NULL, 'Barbell Shrug',               (SELECT id FROM muscle_groups WHERE name = 'Traps'),      'Barbell',    'Pull'),
+        (NULL, 'Rack Pull',                    (SELECT id FROM muscle_groups WHERE name = 'Traps'),      'Barbell',    'Pull'),
+        (NULL, 'Reverse Curl',                (SELECT id FROM muscle_groups WHERE name = 'Forearms'),   'EZ-Bar',     'Isolation'),
+        (NULL, 'Wrist Roller',                (SELECT id FROM muscle_groups WHERE name = 'Forearms'),   'Cable',      'Isolation'),
+        (NULL, 'Cossack Squat',               (SELECT id FROM muscle_groups WHERE name = 'Adductors'),  'Bodyweight', 'Legs'),
+        (NULL, 'Banded Lateral Walk',         (SELECT id FROM muscle_groups WHERE name = 'Abductors'),  'Resistance Band', 'Isolation'),
+        (NULL, 'Neck Flexion',                (SELECT id FROM muscle_groups WHERE name = 'Neck'),       'Plate',      'Isolation'),
+        (NULL, 'Neck Extension',              (SELECT id FROM muscle_groups WHERE name = 'Neck'),       'Plate',      'Isolation')
       ON CONFLICT (name) WHERE owner_user_id IS NULL DO NOTHING;
     `,
   },

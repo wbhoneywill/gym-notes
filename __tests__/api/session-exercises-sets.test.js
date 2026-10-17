@@ -91,6 +91,33 @@ describe('session exercises', () => {
     expect(res.status).toBe(404);
   });
 
+  it('PATCH updates the rest timer for an owned in-progress exercise', async () => {
+    mockGetDbUser.mockResolvedValue(USER);
+    mockSql.mockResolvedValue([{ id: 'se1', rest_seconds: 90 }]);
+    const res = await PATCH(
+      makeRequest('http://localhost', {
+        method: 'PATCH',
+        body: JSON.stringify({ rest_seconds: 90 }),
+      }),
+      params({ id: 's', seId: 'se1' })
+    );
+    expect(res.status).toBe(200);
+    expect(mockSql.mock.calls[0].slice(1)).toContain(90);
+  });
+
+  it('PATCH rejects an invalid rest timer before querying', async () => {
+    mockGetDbUser.mockResolvedValue(USER);
+    const res = await PATCH(
+      makeRequest('http://localhost', {
+        method: 'PATCH',
+        body: JSON.stringify({ rest_seconds: 3601 }),
+      }),
+      params({ id: 's', seId: 'se1' })
+    );
+    expect(res.status).toBe(400);
+    expect(mockSql).not.toHaveBeenCalled();
+  });
+
   it('DELETE 404 when not owned', async () => {
     mockGetDbUser.mockResolvedValue(USER);
     mockSql.mockResolvedValue([]);
@@ -250,6 +277,42 @@ describe('sets', () => {
     expect(res.status).toBe(200);
     expect(mockSql.mock.calls[0].slice(1)).toContain(USER.id);
     expect(mockSql.mock.calls[0].slice(1)).toContain('s');
+  });
+
+  it('PATCH records actual and planned rest for a completed set', async () => {
+    mockGetDbUser.mockResolvedValue(USER);
+    mockSql.mockResolvedValue([{
+      id: 'ws1',
+      planned_rest_seconds: 90,
+      rest_duration_seconds: 82,
+      rest_outcome: 'started_early',
+    }]);
+    const res = await PATCH(
+      makeRequest('http://localhost', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          planned_rest_seconds: 90,
+          rest_duration_seconds: 82,
+          rest_outcome: 'started_early',
+        }),
+      }),
+      params({ id: 's', seId: 'se1', setId: 'ws1' })
+    );
+    expect(res.status).toBe(200);
+    expect(mockSql.mock.calls[0].slice(1)).toEqual(expect.arrayContaining([90, 82, 'started_early']));
+  });
+
+  it('PATCH rejects invalid rest measurements before querying', async () => {
+    mockGetDbUser.mockResolvedValue(USER);
+    const res = await PATCH(
+      makeRequest('http://localhost', {
+        method: 'PATCH',
+        body: JSON.stringify({ rest_duration_seconds: -1 }),
+      }),
+      params({ id: 's', seId: 'se1', setId: 'ws1' })
+    );
+    expect(res.status).toBe(400);
+    expect(mockSql).not.toHaveBeenCalled();
   });
 
   it('PATCH 404 when the set is addressed through a different session', async () => {

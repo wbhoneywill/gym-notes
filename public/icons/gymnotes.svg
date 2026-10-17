@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">GymNotes</title>
+  <desc id="description">Electric lime GymNotes monogram on a matte black background.</desc>
+  <rect width="1024" height="1024" rx="224" fill="#0c0d0e"/>
+  <rect x="156" y="156" width="712" height="712" rx="164" fill="#c8ff3c"/>
+  <path d="M317 399c0-61 45-105 111-105h92v78h-86c-25 0-39 14-39 36v208c0 23 14 36 39 36h55v-94h-67v-74h145v246H428c-66 0-111-44-111-105V399Z" fill="#0c0d0e"/>
+  <path d="M594 294h78l94 259V294h78v436h-79l-93-257v257h-78V294Z" fill="#0c0d0e"/>
+  <path d="M245 802h534" stroke="#0c0d0e" stroke-width="24" stroke-linecap="round" opacity=".32"/>
+</svg>

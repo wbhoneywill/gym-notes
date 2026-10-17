@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getDbUser } from '@/app/lib/auth';
 
 export const metadata = {
@@ -7,6 +8,10 @@ export const metadata = {
 
 export default async function DashboardPage() {
   const user = await getDbUser();
+
+  if (user?.onboarding_completed === false) {
+    redirect('/onboarding');
+  }
 
   // The route is protected by Clerk middleware, so a session always exists.
   // getDbUser() provisions the users row on first visit if the webhook was

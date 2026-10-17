@@ -3,7 +3,7 @@ import { sql } from '@/app/lib/db';
 
 /**
  * PATCH /api/sessions/:id/exercises/:seId/sets/:setId — edit a set
- * (weight, reps, completion, type, order). Ownership is enforced by requiring
+ * (weight, reps, completion, type, order, recorded rest). Ownership is enforced by requiring
  * the set's session_exercise to live in a session owned by the user.
  */
 export async function PATCH(request, { params }) {
@@ -57,6 +57,25 @@ export async function PATCH(request, { params }) {
       );
     }
   }
+  for (const field of ['planned_rest_seconds', 'rest_duration_seconds']) {
+    if (body[field] !== undefined && body[field] !== null) {
+      const seconds = Number(body[field]);
+      const maximum = field === 'planned_rest_seconds' ? 3600 : 86400;
+      if (!Number.isInteger(seconds) || seconds < 0 || seconds > maximum) {
+        return Response.json(
+          { error: `${field} must be an integer between 0 and ${maximum}` },
+          { status: 400 }
+        );
+      }
+    }
+  }
+  if (
+    body.rest_outcome !== undefined &&
+    body.rest_outcome !== null &&
+    !['completed', 'started_early', 'skipped'].includes(body.rest_outcome)
+  ) {
+    return Response.json({ error: 'invalid rest_outcome' }, { status: 400 });
+  }
 
   try {
     const rows = await sql`
@@ -74,6 +93,21 @@ export async function PATCH(request, { params }) {
           THEN ${body.set_type ?? 'working'} ELSE set_type END,
         set_order = CASE WHEN ${body.set_order !== undefined}
           THEN ${body.set_order ?? 0} ELSE set_order END,
+        planned_rest_seconds = CASE
+          WHEN ${body.completed === false} THEN NULL
+          WHEN ${body.planned_rest_seconds !== undefined}
+            THEN ${body.planned_rest_seconds ?? null}
+          ELSE planned_rest_seconds END,
+        rest_duration_seconds = CASE
+          WHEN ${body.completed === false} THEN NULL
+          WHEN ${body.rest_duration_seconds !== undefined}
+            THEN ${body.rest_duration_seconds ?? null}
+          ELSE rest_duration_seconds END,
+        rest_outcome = CASE
+          WHEN ${body.completed === false} THEN NULL
+          WHEN ${body.rest_outcome !== undefined}
+            THEN ${body.rest_outcome ?? null}
+          ELSE rest_outcome END,
         updated_at = NOW()
       WHERE ws.id = ${setId}
         AND ws.session_exercise_id = ${seId}
@@ -85,7 +119,8 @@ export async function PATCH(request, { params }) {
             AND s.status = 'in_progress'
         )
       RETURNING ws.id, ws.session_exercise_id, ws.set_order, ws.weight,
-        ws.weight_unit, ws.reps, ws.completed, ws.set_type
+        ws.weight_unit, ws.reps, ws.completed, ws.set_type,
+        ws.planned_rest_seconds, ws.rest_duration_seconds, ws.rest_outcome
     `;
     if (!rows[0]) {
       return Response.json({ error: 'Not found' }, { status: 404 });

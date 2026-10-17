@@ -39,6 +39,7 @@ jest.unstable_mockModule('@clerk/nextjs/webhooks', () => ({
 /** Reset all shared mocks to a clean state between tests. */
 export function resetMocks() {
   mockSql.mockReset();
+  delete mockSql.transaction;
   mockGetDbUser.mockReset();
   mockAuth.mockReset();
   mockCurrentUser.mockReset();

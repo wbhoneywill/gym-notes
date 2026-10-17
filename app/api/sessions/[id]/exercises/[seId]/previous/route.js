@@ -50,7 +50,8 @@ export async function GET(_request, { params }) {
     }
 
     const sets = await sql`
-      SELECT set_order, weight, weight_unit, reps, completed, set_type
+      SELECT set_order, weight, weight_unit, reps, completed, set_type,
+             planned_rest_seconds, rest_duration_seconds, rest_outcome
       FROM workout_sets
       WHERE session_exercise_id = ${prior[0].session_exercise_id}
       ORDER BY set_order ASC, created_at ASC

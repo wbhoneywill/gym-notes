@@ -2,8 +2,8 @@ import { getDbUser } from '@/app/lib/auth';
 import { sql } from '@/app/lib/db';
 
 /**
- * PATCH /api/sessions/:id/exercises/:seId — skip/unskip or reposition a
- * session exercise. Ownership enforced via a subquery over owned sessions.
+ * PATCH /api/sessions/:id/exercises/:seId — update an in-progress session
+ * exercise. Ownership enforced via a subquery over owned sessions.
  */
 export async function PATCH(request, { params }) {
   const user = await getDbUser();
@@ -32,6 +32,15 @@ export async function PATCH(request, { params }) {
       );
     }
   }
+  if (body.rest_seconds !== undefined && body.rest_seconds !== null) {
+    const seconds = Number(body.rest_seconds);
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > 3600) {
+      return Response.json(
+        { error: 'rest_seconds must be an integer between 0 and 3600' },
+        { status: 400 }
+      );
+    }
+  }
 
   try {
     const rows = await sql`
@@ -41,6 +50,9 @@ export async function PATCH(request, { params }) {
           THEN ${body.skipped ?? false} ELSE skipped END,
         position = CASE WHEN ${body.position !== undefined}
           THEN ${body.position ?? 0} ELSE position END,
+        rest_seconds = CASE WHEN ${body.rest_seconds !== undefined}
+          THEN ${body.rest_seconds === null ? null : Number(body.rest_seconds)}
+          ELSE rest_seconds END,
         updated_at = NOW()
       WHERE se.id = ${seId}
         AND se.session_id = ${id}
@@ -48,7 +60,7 @@ export async function PATCH(request, { params }) {
           SELECT id FROM training_sessions
           WHERE owner_user_id = ${user.id} AND status = 'in_progress'
         )
-      RETURNING se.id, se.exercise_id, se.position, se.skipped
+      RETURNING se.id, se.exercise_id, se.position, se.skipped, se.rest_seconds
     `;
     if (!rows[0]) {
       return Response.json({ error: 'Not found' }, { status: 404 });
